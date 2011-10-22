@@ -49,8 +49,9 @@ class cve20113872::step2 {
   # written in step1 to persistent storage in the puppet confdir.
   $dns_name_file = inline_template("<%= File.join(Puppet[:vardir], '${module}', 'dns_name') %>")
   $dns_name = inline_template("<%= File.read('${dns_name_file}').chomp rescue '' %>")
-  if $dns_name == "" {
-    fail("Error: could not read DNS name from file: ${dns_name_file} (This should have been set in step1)")
+  # Backwards-compatible (As far back as I can remember) if $foo == '' hack
+  case $dns_name {
+    '': { fail("Error: could not read DNS name from file: ${dns_name_file} (This should have been set in step1)") }
   }
   # Make a backup of the original puppet.conf to restore in step4
   file { "${agent_config}.backup.${module}":
@@ -60,20 +61,21 @@ class cve20113872::step2 {
   }
   exec { "CVE-2011-3872 Use Intermediate DNS Name":
     command => "${agent_vardir}/${module}/bin/reconfigure_server.rb '${agent_config}' '${dns_name}'",
-    onlyif  => "sh -c '[ -f ${agent_vardir}/${module}/step2_complete ] && exit 1 || exit 0'",
+    onlyif  => "sh -c '[ -f ${agent_vardir}/${module}/agent_at_step2 ] && exit 1 || exit 0'",
     unless  => "sh -c \"puppet agent --configprint server | grep '^${dns_name}\$'\"",
     require => File["${agent_vardir}/${module}/bin/reconfigure_server.rb"],
     notify  => Exec["CVE-2011-3872 Step2 Reload"],
   }
+  # NOTE: The file name here is used by the agent_cve20113872_step fact.
+  # Please dont' change the path attribute.
   file { "CVE_2011-3872 Step2 Semaphore":
-    path    => "${agent_vardir}/${module}/step2_complete",
+    path    => "${agent_vardir}/${module}/agent_at_step2",
     ensure  => file,
     require => Exec["CVE-2011-3872 Use Intermediate DNS Name"],
     before  => Exec["CVE-2011-3872 Step2 Reload"],
   }
-
   exec { "CVE-2011-3872 Step2 Reload":
-    command     => "kill -HUP ${agent_pid}",
-    refreshonly => true,
+    command => "sh -c 'kill -HUP ${agent_pid}; touch \"${agent_vardir}/${module}/step2_facts_resent\";'",
+    creates => "${agent_vardir}/${module}/step2_facts_resent",
   }
 }

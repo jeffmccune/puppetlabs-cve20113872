@@ -61,7 +61,7 @@ class cve20113872::step4 {
 
   Exec { path => "/opt/puppet/bin:/usr/local/bin:/bin:/usr/bin:/sbin:/usr/sbin:/opt/csw/bin" }
   File {
-    require => Exec["CVE-2011-3872 step1"],
+    require => Exec["CVE-2011-3872 step4"],
     notify  => Exec["CVE-2011-3872 Reload"],
     owner   => "${agent_user}",
     group   => "${agent_group}",
@@ -88,12 +88,26 @@ class cve20113872::step4 {
         default: {
           notify { "CVE-2011-3872 Migration":
             message => "Migrating ${agent_certname}",
-            before  => Exec["CVE-2011-3872 step1"],
+            before  => Exec["CVE-2011-3872 step4"],
+          }
+          # This file allows Facter to figure out that the agent has reached Step4
+          # The require parameter overrides the resource default
+          file { "${agent_vardir}/${module}/agent_at_step4":
+            ensure  => file,
+            notify  => Exec["CVE-2011-3872 step4 Resend Facts"],
+            require => File["${agent_vardir}/${module}"],
+          }
+          # Re-Send facts to the puppet master to provide a progress update that this
+          # agent has reached Step 4.
+          exec { "CVE-2011-3872 step4 Resend Facts":
+            command => "sh -c 'kill -HUP ${agent_pid}; touch \"${agent_vardir}/${module}/step4_facts_resent\";'",
+            creates => "${agent_vardir}/${module}/step4_facts_resent",
+            before  => Exec["CVE-2011-3872 step4"],
           }
           # When we generate the new CA in the step3 script, the existing SSL
           # directory MUST be moved to the path referenced in the creates parameter
           # otherwise the agent on the master will disable the new CA.
-          exec { "CVE-2011-3872 step1":
+          exec { "CVE-2011-3872 step4":
             command => "mv '${agent_ssldir}' '${agent_ssldir}.previous'",
             creates => "${agent_ssldir}.previous",
           }
